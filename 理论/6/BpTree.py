@@ -1,3 +1,5 @@
+import math
+
 class BPlusTreeNode:
     def __init__(self, order, leaf=False):
         self.order = order  # 阶数
@@ -7,12 +9,24 @@ class BPlusTreeNode:
         self.next = None    # 叶子节点的下一个节点（仅叶子节点使用）
 
     def is_full(self):
-        return len(self.keys) >= self.order - 1
+        return len(self.keys) > self.order - 1  # 修改为 >
 
 class BPlusTree:
     def __init__(self, order):
         self.order = order
         self.root = BPlusTreeNode(order, leaf=True)
+
+    def find_parent(self, current, child):
+        if current.leaf:
+            return None  # 叶子节点没有子节点
+        for c in current.children:
+            if c is child:
+                return current
+            if not c.leaf:
+                parent = self.find_parent(c, child)
+                if parent:
+                    return parent
+        return None
 
     def find_leaf(self, key, verbose=False):
         current = self.root
@@ -55,14 +69,42 @@ class BPlusTree:
         leaf.keys.append(key)
         leaf.keys.sort()
         print(f"Inserted {key} into leaf: {leaf.keys}")
+        if leaf.is_full():
+            parent = self.find_parent(self.root, leaf)
+            if parent is None:
+                # 如果叶子节点是根节点，需要创建新的根
+                new_root = BPlusTreeNode(self.order)
+                new_root.children.append(self.root)
+                self.split_child(new_root, 0)
+                self.root = new_root
+                print(f"Root was split. New root keys: {self.root.keys}")
+            else:
+                index = parent.children.index(leaf)
+                self.split_child(parent, index)
+                # 递归检查父节点是否需要分裂
+                self.handle_parent_overflow(parent)
+
+    def handle_parent_overflow(self, node):
+        if node.is_full():
+            parent = self.find_parent(self.root, node)
+            if parent is None:
+                # 节点是根节点，创建新的根
+                new_root = BPlusTreeNode(self.order)
+                new_root.children.append(self.root)
+                self.split_child(new_root, 0)
+                self.root = new_root
+                print(f"Root was split. New root keys: {self.root.keys}")
+            else:
+                index = parent.children.index(node)
+                self.split_child(parent, index)
+                self.handle_parent_overflow(parent)
 
     def split_child(self, parent, index):
         node = parent.children[index]
-        mid = self.order // 2
-        split_key = node.keys[mid]
 
         if node.leaf:
             # 分裂叶子节点
+            mid = len(node.keys) // 2
             new_node = BPlusTreeNode(self.order, leaf=True)
             new_node.keys = node.keys[mid:]
             node.keys = node.keys[:mid]
@@ -74,30 +116,31 @@ class BPlusTree:
             print(f"Split leaf node. Parent keys now: {parent.keys}")
         else:
             # 分裂内部节点
+            mid = len(node.keys) // 2
+            split_key = node.keys[mid]
+
             new_node = BPlusTreeNode(self.order, leaf=False)
             new_node.keys = node.keys[mid + 1:]
             new_node.children = node.children[mid + 1:]
             node.keys = node.keys[:mid]
             node.children = node.children[:mid + 1]
 
-            parent.keys.insert(index, split_key)  # 修正这里的错误
+            parent.keys.insert(index, split_key)
             parent.children.insert(index + 1, new_node)
             print(f"Split internal node. Parent keys now: {parent.keys}")
 
     def print_tree(self):
-        levels = []
-        self._collect_levels(self.root, 0, levels)
-        for i, level in enumerate(levels):
-            level_keys = " | ".join(str(node.keys) for node in level)
-            print(f"Level {i}: {level_keys}")
+        def _print_node(node, level, parent_keys):
+            indent = "    " * level
+            if parent_keys is None:
+                print(f"{indent}Level {level}: {node.keys}")
+            else:
+                print(f"{indent}Level {level}: {node.keys} (linked from {parent_keys})")
+            if not node.leaf:
+                for child in node.children:
+                    _print_node(child, level + 1, node.keys)
 
-    def _collect_levels(self, node, level, levels):
-        if len(levels) <= level:
-            levels.append([])
-        levels[level].append(node)
-        if not node.leaf:
-            for child in node.children:
-                self._collect_levels(child, level + 1, levels)
+        _print_node(self.root, 0, None)
 
     def search(self, key):
         leaf = self.find_leaf(key)
@@ -121,7 +164,7 @@ class BPlusTree:
 if __name__ == "__main__":
     keys = [2, 3, 5, 7, 11, 17, 19, 23, 29, 31]
 
-    orders = [4, 6, 8]
+    orders = [4,6,8]
 
     for order in orders:
         print(f"\n构建B+树，阶数 = {order}:")
